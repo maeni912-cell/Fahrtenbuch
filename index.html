@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fahrtenbuch">
+<link rel="manifest" href="./manifest.webmanifest">
+<title>Fahrtenbuch</title>
+<style>
+:root{--bg:#f4f4f6;--card:#fff;--text:#111;--muted:#6b6b70;--line:#e2e2e7;--soft:#efeff3;--warn:#fff7e6;--danger:#faeeee}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif}
+.wrap{max-width:760px;margin:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(40px + env(safe-area-inset-bottom))}
+h1{font-size:30px;margin:4px 0 14px}h2{font-size:18px;margin:0 0 12px}.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;margin:12px 0;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#fafafa;border:1px solid #eee;border-radius:15px;padding:12px}.metric span{font-size:12px;color:var(--muted)}.metric b{display:block;font-size:22px;margin-top:5px}
+label{display:block;font-size:13px;color:var(--muted);margin:11px 0 5px}input,select{width:100%;padding:13px;border:1px solid #cfcfd4;border-radius:13px;font-size:16px;background:#fff;color:#111}
+button{width:100%;padding:14px;border-radius:14px;border:0;font-size:16px;font-weight:700;margin-top:10px}.primary{background:#111;color:#fff}.secondary{background:var(--soft);color:#111}.danger{background:var(--danger);color:#8a1010}
+.small,.status,.meta{font-size:12px;color:var(--muted);line-height:1.45}.status,.meta{margin-top:5px}.hidden{display:none!important}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.pill{display:inline-block;padding:4px 8px;border-radius:999px;background:var(--soft);font-size:11px}
+.trip{padding:13px 0;border-top:1px solid #eee}.trip:first-child{border-top:0}.actions,.presetrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.actions button,.presetrow button{margin-top:8px;padding:10px;font-size:14px}
+.inlinebtn{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}.inlinebtn button{width:auto;margin:0;padding:12px 13px;font-size:14px}.notice{border-radius:14px;padding:11px;font-size:12px;line-height:1.45;background:var(--warn)}
+.active{background:#111;color:#fff;border-radius:16px;padding:14px}.active .small{color:#bbb}.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}.tabs button{margin:0;padding:11px}.tabs .on{background:#111;color:#fff}.tabs .off{background:#eee;color:#111}
+.badge-business{background:#eef5ff}.badge-private{background:#f2f2f2}.badge-commute{background:#fff1dd}
+dialog{border:0;border-radius:20px;padding:0;max-width:680px;width:calc(100% - 24px);max-height:92vh}dialog::backdrop{background:rgba(0,0,0,.35)}.modal{padding:16px;max-height:92vh;overflow:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Fahrtenbuch</h1>
+
+<div class="card">
+  <div class="grid2">
+    <div class="metric"><span>Geschäftlich dieses Jahr</span><b id="bizYear">0 km</b></div>
+    <div class="metric"><span>Privat inkl. Arbeitsweg</span><b id="privYear">0 km</b><div class="small" id="commuteYear">davon Arbeitsweg: 0 km</div></div>
+  </div>
+  <div class="status" id="goalStatus"></div>
+</div>
+
+<div class="card" id="startCard">
+  <h2>Fahrt starten</h2>
+  <label>Datum</label><input id="tripDate" type="date">
+  <label>Start km</label>
+  <div class="inlinebtn">
+    <input id="startOdo" inputmode="numeric" placeholder="z. B. 91500">
+    <button class="secondary" id="useLastKm" type="button">Letzten übernehmen</button>
+  </div>
+  <div class="status" id="lastKmInfo"></div>
+  <label>Kunde</label><input id="customer" list="customerList" autocomplete="off" placeholder="z. B. Muster AG">
+  <datalist id="customerList"></datalist>
+  <label>Kundenadresse</label><input id="customerAddress" autocomplete="off" placeholder="wird bei gespeichertem Kunden automatisch eingesetzt">
+  <label>Zweck</label><input id="purpose" value="Kundenbesuch" placeholder="z. B. Kundenbesuch">
+  <button class="primary" id="startBtn">START</button>
+  <div class="status" id="startStatus">Start-Ortschaft wird automatisch per GPS erkannt.</div>
+</div>
+
+<div class="card hidden" id="activeCard">
+  <div class="active">
+    <div class="small">Fahrt gestartet</div>
+    <div class="row"><strong id="activeRoute">…</strong><strong>Start gespeichert</strong></div>
+    <div class="small" id="activeMeta"></div>
+    <div class="small">Die Strecke wird erst bei ENDE aus Start- und Ziel-GPS als Straßenroute berechnet.</div>
+  </div>
+  <button class="primary" id="finishBtn">ENDE</button>
+</div>
+
+<div class="card hidden" id="reviewCard">
+  <h2>Fahrt prüfen</h2>
+  <div class="grid2">
+    <div><label>Datum</label><input id="reviewDate" type="date"></div>
+    <div><label>Fahrtart</label>
+      <select id="reviewType">
+        <option value="business">Geschäftlich</option>
+        <option value="private">Privat</option>
+        <option value="commute">Arbeitsweg</option>
+      </select>
+    </div>
+  </div>
+  <div class="grid2">
+    <div><label>Start</label><input id="reviewStart" placeholder="Ortschaft"></div>
+    <div><label>Ende</label><input id="reviewEnd" placeholder="Ortschaft"></div>
+  </div>
+  <label>Kunde</label><input id="reviewCustomer">
+  <label>Kundenadresse</label><input id="reviewCustomerAddress">
+  <label>Zweck</label><input id="reviewPurpose">
+  <div class="grid2">
+    <div><label>Start km</label><input id="reviewStartOdo" inputmode="numeric"></div>
+    <div><label>Ende km</label><input id="reviewEndOdo" inputmode="numeric"></div>
+  </div>
+  <div class="notice" id="distanceNote"></div>
+  <button class="primary" id="saveReviewed">Speichern</button>
+  <button class="secondary" id="cancelReviewed">Verwerfen</button>
+</div>
+
+<div class="card">
+  <div class="tabs">
+    <button id="tabTrips" class="on">Fahrten</button>
+    <button id="tabManual" class="off">Nachtragen</button>
+  </div>
+  <div id="tripsPane">
+    <div class="row"><h2>Fahrten</h2><span class="pill" id="tripCount">0</span></div>
+    <div id="tripList"></div>
+  </div>
+
+  <div id="manualPane" class="hidden">
+    <h2>Fahrt nachtragen</h2>
+    <label>Datum</label><input id="mDate" type="date">
+
+    <label>Start</label><input id="mStart" placeholder="Ortschaft oder Adresse">
+    <div class="presetrow"><button class="secondary" id="mStartHome">Zuhause</button><span></span></div>
+
+    <label>Ende</label><input id="mEnd" placeholder="Ortschaft oder Adresse">
+    <div class="presetrow"><button class="secondary" id="mEndHome">Zuhause</button><span></span></div>
+
+    <label>Kunde</label><input id="mCustomer" list="customerList" placeholder="optional">
+    <label>Kundenadresse</label><input id="mCustomerAddress" placeholder="wird bei gespeichertem Kunden automatisch eingesetzt">
+    <label>Zweck</label><input id="mPurpose" value="Kundenbesuch" placeholder="z. B. Kundenbesuch">
+
+    <label>Start km</label>
+    <div class="inlinebtn">
+      <input id="mStartOdo" inputmode="numeric" placeholder="Pflicht">
+      <button class="secondary" id="mUseLastKm">Letzten übernehmen</button>
+    </div>
+
+    <label>Ende km</label><input id="mEndOdo" inputmode="numeric" placeholder="leer lassen = automatisch berechnen">
+    <button class="secondary" id="mCalcRoute">Ende km aus Route berechnen</button>
+    <div class="status" id="mRouteStatus"></div>
+
+    <label>Fahrtart</label>
+    <select id="mType">
+      <option value="auto">Automatisch</option>
+      <option value="business">Geschäftlich</option>
+      <option value="private">Privat</option>
+      <option value="commute">Arbeitsweg</option>
+    </select>
+    <div class="small">Automatisch: Kunde oder Zweck vorhanden = Geschäftlich; sonst Privat. Arbeitsweg wird nur manuell ausgewählt.</div>
+
+    <button class="primary" id="manualSave">Nachtrag speichern</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>HR-Monatsbericht</h2>
+  <label>Monat</label>
+  <input id="hrMonth" type="month">
+  <div class="notice" id="hrRuleInfo">Nur Geschäftlich wird an HR exportiert. Arbeitsweg und Privat bleiben in der App. Fahrten zu Kunden werden unabhängig vom Ort vollständig als Geschäftsfahrt übernommen. Arbeitsweg wird nur manuell als solcher markiert.</div>
+  <div class="status" id="hrSummary"></div>
+  <button class="primary" id="hrCsvBtn">HR-Monatsbericht (CSV)</button>
+  <div class="small">Spalten wie in der HR-Vorlage: Datum, Abfahrtsort, Zielort, Zweck / Kunde, Km-Stand Start, Km-Stand Ende, Geschäftliche km, km manuell, Bemerkung.</div>
+</div>
+
+<div class="card">
+  <h2>Export & Sicherung</h2>
+  <div class="actions"><button class="secondary" id="csvBtn">CSV exportieren</button><button class="secondary" id="backupBtn">Backup sichern</button></div>
+  <label>Backup wiederherstellen</label><input id="restoreFile" type="file" accept="application/json">
+  <div class="small">CSV: Datum, Start, Ende, Kunde, Zweck, Start km, Ende km, Fahrtart. Interne Zeiten/Änderungen werden nicht mitexportiert.</div>
+</div>
+</div>
+
+<dialog id="editDialog"><div class="modal">
+  <h2>Fahrt bearbeiten</h2><input id="editId" type="hidden">
+  <label>Datum</label><input id="eDate" type="date">
+  <div class="grid2"><div><label>Start</label><input id="eStart"></div><div><label>Ende</label><input id="eEnd"></div></div>
+  <label>Kunde</label><input id="eCustomer" list="customerList">
+  <label>Kundenadresse</label><input id="eCustomerAddress">
+  <label>Zweck</label><input id="ePurpose">
+  <div class="grid2"><div><label>Start km</label><input id="eStartOdo" inputmode="numeric"></div><div><label>Ende km</label><input id="eEndOdo" inputmode="numeric"></div></div>
+  <label>Fahrtart</label><select id="eType"><option value="business">Geschäftlich</option><option value="private">Privat</option><option value="commute">Arbeitsweg</option></select>
+  <button class="primary" id="editSave">Änderungen speichern</button><button class="secondary" id="editClose">Abbrechen</button>
+</div></dialog>
+
+<script>
+const HOME_ADDRESS="Melchiorstrasse 7, 3027 Bern";
+const RECORDS_KEY="fahrtenbuch_v6_records",ACTIVE_KEY="fahrtenbuch_v6_active",CUSTOMERS_KEY="fahrtenbuch_v6_customers",AUDIT_KEY="fahrtenbuch_v6_audit",PLACE_CACHE_KEY="fahrtenbuch_v6_places";
+
+let records=JSON.parse(localStorage.getItem(RECORDS_KEY)||"[]");
+let active=JSON.parse(localStorage.getItem(ACTIVE_KEY)||"null");
+let customers=JSON.parse(localStorage.getItem(CUSTOMERS_KEY)||"{}");
+let audit=JSON.parse(localStorage.getItem(AUDIT_KEY)||"[]");
+let placeCache=JSON.parse(localStorage.getItem(PLACE_CACHE_KEY)||"{}");
+let reviewDraft=null;
+
+const $=id=>document.getElementById(id),today=()=>new Date().toISOString().slice(0,10),nowIso=()=>new Date().toISOString(),idgen=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const num=v=>{const n=parseFloat(String(v??"").replace(/[’'\s]/g,"").replace(",","."));return Number.isFinite(n)?n:null};
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+const fmtKm=n=>Number(n||0).toLocaleString("de-CH",{maximumFractionDigits:1})+" km",clone=o=>JSON.parse(JSON.stringify(o)),norm=s=>String(s||"").trim().toLowerCase();
+
+function saveAll(){localStorage.setItem(RECORDS_KEY,JSON.stringify(records));localStorage.setItem(CUSTOMERS_KEY,JSON.stringify(customers));localStorage.setItem(AUDIT_KEY,JSON.stringify(audit));localStorage.setItem(PLACE_CACHE_KEY,JSON.stringify(placeCache))}
+function auditAdd(action,id,before,after){audit.push({timestamp:nowIso(),action,recordId:id,before:before||null,after:after||null});if(audit.length>2000)audit=audit.slice(-2000)}
+function typeLabel(t){return t==="business"?"Geschäftlich":t==="commute"?"Arbeitsweg":"Privat"}
+function typeClass(t){return t==="business"?"badge-business":t==="commute"?"badge-commute":"badge-private"}
+function recKm(r){return Math.max(0,(num(r.endOdo)||0)-(num(r.startOdo)||0))}
+function lastEndKm(){const a=records.filter(r=>num(r.endOdo)!=null).sort((x,y)=>((x.date||"")+"|"+(x.createdAt||"")).localeCompare((y.date||"")+"|"+(y.createdAt||"")));return a.length?num(a[a.length-1].endOdo):null}
+function prevRecord(date,createdAt){const t=(date||"")+"|"+(createdAt||"");return records.filter(r=>!r.autoGap&&((r.date||"")+"|"+(r.createdAt||""))<t).sort((a,b)=>((a.date||"")+"|"+(a.createdAt||"")).localeCompare((b.date||"")+"|"+(b.createdAt||""))).pop()||null}
+
+function distKm(a,b){const R=6371,rad=d=>d*Math.PI/180,dLat=rad(b.lat-a.lat),dLon=rad(b.lon-a.lon);const x=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function getPosition(){return new Promise((resolve,reject)=>{if(!navigator.geolocation)return reject(new Error("GPS nicht verfügbar"));navigator.geolocation.getCurrentPosition(p=>resolve({lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy,ts:p.timestamp}),reject,{enableHighAccuracy:true,timeout:15000,maximumAge:10000})})}
+async function reversePlace(p){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${p.lat}&lon=${p.lon}&zoom=14&addressdetails=1`,{headers:{"Accept-Language":"de"}}),d=await r.json(),a=d.address||{};return a.city||a.town||a.village||a.municipality||a.suburb||a.county||"Unbekannt"}catch(e){return"Unbekannt"}}
+async function geocode(q){if(placeCache[q])return placeCache[q];const r=await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ch&accept-language=de&q=${encodeURIComponent(q)}`,{headers:{"Accept-Language":"de"}}),d=await r.json();if(!d.length)throw new Error("Ort/Adresse nicht gefunden");const out={lat:+d[0].lat,lon:+d[0].lon};placeCache[q]=out;saveAll();return out}
+async function routeCoords(a,b){const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`),d=await r.json();if(d.code!=="Ok"||!d.routes?.length)throw new Error("Keine Route gefunden");return d.routes[0].distance/1000}
+async function routeText(a,b){return routeCoords(await geocode(a),await geocode(b))}
+async function fixedCoords(){try{placeCache.__home=placeCache.__home||await geocode(HOME_ADDRESS);saveAll()}catch(e){}}
+const near=(p,q)=>p&&q&&distKm(p,q)<=1.2;
+function classify(x){if(!String(x.customer||"").trim()&&!String(x.purpose||"").trim())return"private";return"business"}
+
+function hrBusinessKm(r){
+  return r.type==="business" ? recKm(r) : 0;
+}
+function businessKmForYear(year){
+  return records.filter(r=>r.type==="business"&&String(r.date).startsWith(String(year))).reduce((s,r)=>s+hrBusinessKm(r),0);
+}
+
+function saveCustomer(name,address,place){name=String(name||"").trim();if(!name)return;customers[name]={...(customers[name]||{}),address:String(address||"").trim()||customers[name]?.address||"",place:place||customers[name]?.place||"",updatedAt:nowIso()};saveAll();renderCustomers()}
+function renderCustomers(){$("customerList").innerHTML=Object.keys(customers).sort((a,b)=>a.localeCompare(b,"de")).map(n=>`<option value="${esc(n)}"></option>`).join("")}
+function applyCustomer(name,addressId){const c=customers[String(name||"").trim()];if(c?.address)$(addressId).value=c.address}
+
+function addPrivateGap(startKm,date,createdAt){const p=prevRecord(date,createdAt);if(!p)return;const pe=num(p.endOdo),sk=num(startKm);if(pe==null||sk==null||sk<=pe)return;const rec={id:idgen(),date,start:"",end:"",customer:"",purpose:"",startOdo:pe,endOdo:sk,type:"private",autoGap:true,createdAt,updatedAt:nowIso()};records.push(rec);auditAdd("create_auto_private_gap",rec.id,null,rec)}
+function recalcGaps(){const fixed=records.filter(r=>!r.autoGap).sort((a,b)=>((a.date||"")+"|"+(a.createdAt||"")).localeCompare((b.date||"")+"|"+(b.createdAt||"")));records=fixed.slice();for(let i=1;i<fixed.length;i++){const a=fixed[i-1],b=fixed[i],x=num(a.endOdo),y=num(b.startOdo);if(x!=null&&y!=null&&y>x)records.push({id:idgen(),date:b.date,start:"",end:"",customer:"",purpose:"",startOdo:x,endOdo:y,type:"private",autoGap:true,createdAt:b.createdAt,updatedAt:nowIso()})}}
+
+function render(){
+ const y=new Date().getFullYear(),
+ biz=businessKmForYear(y),
+ privateOnly=records.filter(r=>r.type==="private"&&String(r.date).startsWith(y)).reduce((s,r)=>s+recKm(r),0),
+ commute=records.filter(r=>r.type==="commute"&&String(r.date).startsWith(y)).reduce((s,r)=>s+recKm(r),0),
+ priv=privateOnly+commute;
+ $("bizYear").textContent=fmtKm(biz);
+ $("privYear").textContent=fmtKm(priv);
+ $("commuteYear").textContent=`davon Arbeitsweg: ${fmtKm(commute)}`;
+ $("goalStatus").textContent=biz<30001?`Noch ${fmtKm(30001-biz)} bis 30’001 km.`:biz<=35000?"Im Zielbereich 30’001–35’000 km.":`Über 35’000 km: ${fmtKm(biz-35000)}.`;
+ const le=lastEndKm();$("lastKmInfo").textContent=le==null?"Noch kein letzter Kilometerstand.":`Letzter Stand: ${le.toLocaleString("de-CH")} km`;$("tripCount").textContent=records.length+" Einträge";
+ if(active){$("startCard").classList.add("hidden");$("activeCard").classList.remove("hidden");$("activeRoute").textContent=(active.start||"Start")+" → …";$("activeMeta").textContent=`${active.date} · Start km ${Number(active.startOdo).toLocaleString("de-CH")}`}else{$("startCard").classList.remove("hidden");$("activeCard").classList.add("hidden")}
+ const sorted=records.slice().sort((a,b)=>((b.date||"")+"|"+(b.createdAt||"")).localeCompare((a.date||"")+"|"+(a.createdAt||"")));
+ $("tripList").innerHTML=sorted.length?sorted.map(r=>`<div class="trip"><div class="row"><strong>${esc(r.date)}</strong><span class="pill ${typeClass(r.type)}">${typeLabel(r.type)}</span></div><div class="meta">${esc(r.start||"–")} → ${esc(r.end||"–")}</div><div class="meta">${esc(r.customer||"–")}${r.purpose?" · "+esc(r.purpose):""}</div><div class="meta"><b>${Number(r.startOdo).toLocaleString("de-CH")} → ${Number(r.endOdo).toLocaleString("de-CH")} km</b> · gefahren ${fmtKm(recKm(r))}</div>${r.autoGap?'<div class="meta">Automatisch als Privat aus Kilometerstand-Differenz.</div>':`<div class="actions"><button class="secondary" onclick="openEdit('${r.id}')">Bearbeiten</button><button class="danger" onclick="deleteRecord('${r.id}')">Löschen</button></div>`}</div>`).join(""):'<div class="small">Noch keine Fahrten.</div>';
+}
+
+async function startTrip(){
+ const startOdo=num($("startOdo").value);
+ if(startOdo==null)return alert("Start km muss ausgefüllt sein.");
+ const last=lastEndKm();
+ if(last!=null && startOdo<last){
+   return alert(`Start km (${startOdo.toLocaleString("de-CH")}) kann nicht kleiner als der letzte gespeicherte Stand (${last.toLocaleString("de-CH")}) sein.`);
+ }
+ if(last!=null && startOdo>last){
+   const gap=startOdo-last;
+   if(!confirm(`${gap.toLocaleString("de-CH")} km seit der letzten Fahrt werden automatisch als Privat erfasst. Fahrt starten?`)) return;
+ }
+ $("startBtn").disabled=true;
+ $("startStatus").textContent="Start-GPS und Ortschaft werden gespeichert …";
+ let pos=null,place="Unbekannt";
+ try{
+   pos=await getPosition();
+   place=await reversePlace(pos);
+ }catch(e){
+   $("startBtn").disabled=false;
+   $("startStatus").textContent="GPS konnte nicht ermittelt werden.";
+   alert("Start-GPS konnte nicht ermittelt werden. Bitte Standortfreigabe prüfen und erneut versuchen.");
+   return;
+ }
+ active={
+   id:idgen(),date:$("tripDate").value||today(),start:place,startPos:pos,startOdo,
+   customer:$("customer").value.trim(),customerAddress:$("customerAddress").value.trim(),
+   purpose:$("purpose").value.trim(),createdAt:nowIso(),startedAt:nowIso()
+ };
+ localStorage.setItem(ACTIVE_KEY,JSON.stringify(active));
+ $("startBtn").disabled=false;
+ $("startStatus").textContent="Start-Ortschaft wird automatisch per GPS erkannt.";
+ render();
+}
+async function finishTrip(){
+ if(!active)return;
+ $("finishBtn").disabled=true;
+ let endPos=null,endPlace="Unbekannt";
+ try{
+   endPos=await getPosition();
+   endPlace=await reversePlace(endPos);
+ }catch(e){
+   $("finishBtn").disabled=false;
+   alert("Ziel-GPS konnte nicht ermittelt werden. Bitte Standortfreigabe prüfen und erneut auf ENDE tippen.");
+   return;
+ }
+ let km=0;
+ const method="Straßenroute zwischen Start- und Ziel-GPS";
+ try{
+   if(!active.startPos)throw new Error("Start-GPS fehlt");
+   km=await routeCoords(active.startPos,endPos);
+ }catch(e){
+   $("finishBtn").disabled=false;
+   alert("Die Straßenroute konnte nicht berechnet werden. Bitte Internetverbindung prüfen und erneut auf ENDE tippen.");
+   return;
+ }
+ const proposed=Math.round(Number(active.startOdo)+Number(km));
+ const type=classify({startPos:active.startPos,endPos,customer:active.customer,purpose:active.purpose});
+ reviewDraft={...active,end:endPlace,endPos,finishedAt:nowIso(),routeKm:km,routeMethod:method,type};
+ $("reviewDate").value=active.date;
+ $("reviewStart").value=active.start;
+ $("reviewEnd").value=endPlace;
+ $("reviewCustomer").value=active.customer;
+ $("reviewCustomerAddress").value=active.customerAddress;
+ $("reviewPurpose").value=active.purpose;
+ $("reviewStartOdo").value=active.startOdo;
+ $("reviewEndOdo").value=proposed;
+ $("reviewType").value=type;
+ $("distanceNote").textContent=`Berechnete Straßenstrecke: ${Number(km).toFixed(1)} km. Vorgeschlagener Endstand: ${proposed.toLocaleString("de-CH")} km. Bitte bestätigen oder auf den tatsächlichen Tachostand anpassen.`;
+ $("reviewCard").classList.remove("hidden");
+ $("activeCard").classList.add("hidden");
+ $("finishBtn").disabled=false;
+}
+function saveReviewed(){
+ if(!reviewDraft)return;const s=num($("reviewStartOdo").value),e=num($("reviewEndOdo").value);if(s==null||e==null)return alert("Start km und Ende km müssen ausgefüllt sein.");if(e<s)return alert("Ende km darf nicht kleiner sein.");
+ addPrivateGap(s,$("reviewDate").value,reviewDraft.createdAt);
+ const r={id:reviewDraft.id,date:$("reviewDate").value,start:$("reviewStart").value.trim(),end:$("reviewEnd").value.trim(),customer:$("reviewCustomer").value.trim(),customerAddress:$("reviewCustomerAddress").value.trim(),purpose:$("reviewPurpose").value.trim(),startOdo:s,endOdo:e,type:$("reviewType").value,startPos:reviewDraft.startPos,endPos:reviewDraft.endPos,startRole:near(reviewDraft.startPos,placeCache.__home)?"home":near(reviewDraft.startPos,placeCache.__work)?"work":null,endRole:near(reviewDraft.endPos,placeCache.__home)?"home":near(reviewDraft.endPos,placeCache.__work)?"work":null,createdAt:reviewDraft.createdAt,updatedAt:nowIso(),startedAt:reviewDraft.startedAt,finishedAt:reviewDraft.finishedAt};
+ records.push(r);auditAdd("create",r.id,null,r);saveCustomer(r.customer,r.customerAddress,r.end);
+ active=null;reviewDraft=null;localStorage.removeItem(ACTIVE_KEY);
+ $("reviewCard").classList.add("hidden");
+ ["startOdo","customer","customerAddress"].forEach(id=>$(id).value="");
+ $("purpose").value="Kundenbesuch";
+ $("tripDate").value=today();
+ saveAll();render()
+}
+function role(v){if(v===HOME_ADDRESS)return"home";return null}
+function placeOnly(v){if(v===HOME_ADDRESS)return"Bern";return String(v||"").trim()}
+async function calcManual(){const s=num($("mStartOdo").value);if(s==null)return alert("Start km eingeben.");let a=$("mStart").value.trim(),b=$("mCustomerAddress").value.trim()||$("mEnd").value.trim();if(!a||!b)return alert("Start und Ende bzw. Kundenadresse eingeben.");$("mRouteStatus").textContent="Route wird berechnet …";try{const km=await routeText(a,b),e=Math.round(s+km);$("mEndOdo").value=e;$("mRouteStatus").textContent=`Ca. ${km.toFixed(1)} km → Ende km ${e.toLocaleString("de-CH")}`}catch(err){$("mRouteStatus").textContent="Fehler: "+err.message}}
+function manualSave(){
+ const s=num($("mStartOdo").value),e=num($("mEndOdo").value);if(s==null)return alert("Start km muss ausgefüllt sein.");if(e==null)return alert("Ende km muss ausgefüllt sein oder automatisch berechnet werden.");if(e<s)return alert("Ende km darf nicht kleiner sein.");
+ const createdAt=nowIso(),start=$("mStart").value.trim(),end=$("mEnd").value.trim(),customer=$("mCustomer").value.trim(),purpose=$("mPurpose").value.trim();let type=$("mType").value;if(type==="auto")type=classify({startRole:role(start),endRole:role(end),customer,purpose});
+ addPrivateGap(s,$("mDate").value||today(),createdAt);const r={id:idgen(),date:$("mDate").value||today(),start:placeOnly(start),end:placeOnly(end),customer,customerAddress:$("mCustomerAddress").value.trim(),purpose,startOdo:s,endOdo:e,type,startRole:role(start),endRole:role(end),createdAt,updatedAt:nowIso()};records.push(r);auditAdd("create_manual",r.id,null,r);saveCustomer(r.customer,r.customerAddress,r.end);["mStart","mEnd","mCustomer","mCustomerAddress","mStartOdo","mEndOdo"].forEach(id=>$(id).value="");$("mPurpose").value="Kundenbesuch";$("mType").value="auto";$("mRouteStatus").textContent="";saveAll();render();$("tabTrips").click()
+}
+
+window.openEdit=id=>{const r=records.find(x=>x.id===id);if(!r)return;$("editId").value=id;$("eDate").value=r.date;$("eStart").value=r.start;$("eEnd").value=r.end;$("eCustomer").value=r.customer;$("eCustomerAddress").value=r.customerAddress||"";$("ePurpose").value=r.purpose;$("eStartOdo").value=r.startOdo;$("eEndOdo").value=r.endOdo;$("eType").value=r.type;$("editDialog").showModal()}
+window.deleteRecord=id=>{const r=records.find(x=>x.id===id);if(r&&confirm("Fahrt wirklich löschen?")){auditAdd("delete",id,r,null);records=records.filter(x=>x.id!==id);recalcGaps();saveAll();render()}}
+function editSave(){const id=$("editId").value,i=records.findIndex(x=>x.id===id),s=num($("eStartOdo").value),e=num($("eEndOdo").value);if(i<0)return;if(s==null||e==null)return alert("Start km und Ende km müssen ausgefüllt sein.");if(e<s)return alert("Ende km darf nicht kleiner sein.");const before=clone(records[i]),after={...records[i],date:$("eDate").value,start:$("eStart").value.trim(),end:$("eEnd").value.trim(),customer:$("eCustomer").value.trim(),customerAddress:$("eCustomerAddress").value.trim(),purpose:$("ePurpose").value.trim(),startOdo:s,endOdo:e,type:$("eType").value,updatedAt:nowIso()};records[i]=after;auditAdd("edit",id,before,after);saveCustomer(after.customer,after.customerAddress,after.end);recalcGaps();saveAll();render();$("editDialog").close()}
+
+
+function hrPurposeCustomer(r){
+  const a=String(r.purpose||"").trim(),b=String(r.customer||"").trim();
+  if(a&&b)return `${a} / ${b}`;
+  return a||b;
+}
+function monthName(ym){
+  const [y,m]=String(ym).split("-");
+  const names=["","Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+  return `${names[Number(m)]||m} ${y}`;
+}
+function hrRowsForMonth(ym){
+  return records.filter(r=>r.type==="business"&&String(r.date||"").startsWith(ym))
+    .sort((a,b)=>((a.date||"")+"|"+(a.createdAt||"")).localeCompare((b.date||"")+"|"+(b.createdAt||"")))
+    .map(r=>({
+      date:r.date||"",start:r.start||"",end:r.end||"",purposeCustomer:hrPurposeCustomer(r),
+      startKm:r.startOdo,endKm:r.endOdo,businessKm:recKm(r),manualKm:"",note:""
+    }));
+}
+function refreshHrSummary(){
+  const ym=$("hrMonth").value||today().slice(0,7),rows=hrRowsForMonth(ym),sum=rows.reduce((s,r)=>s+Number(r.businessKm||0),0);
+  $("hrSummary").textContent=`${monthName(ym)}: ${rows.length} Geschäftsfahrt(en), ${fmtKm(sum)} geschäftliche km.`;
+}
+async function exportHrCsv(){
+  const ym=$("hrMonth").value||today().slice(0,7);
+  const data=hrRowsForMonth(ym);
+  if(!data.length){alert("Für diesen Monat sind keine Geschäftsfahrten vorhanden.");refreshHrSummary();return;}
+  const rows=[["Datum","Abfahrtsort","Zielort","Zweck / Kunde","Km-Stand Start","Km-Stand Ende","Geschäftliche km","km manuell (ohne Zählerstand)","Bemerkung"]];
+  data.forEach(r=>rows.push([r.date,r.start,r.end,r.purposeCustomer,r.startKm,r.endKm,Number(r.businessKm).toFixed(1),r.manualKm===""?"":Number(r.manualKm).toFixed(1),r.note]));
+  const total=data.reduce((s,r)=>s+Number(r.businessKm||0),0);
+  rows.push(["","","","Total geschäftliche km","","",total.toFixed(1),"",""]);
+  const blob=new Blob(["\ufeff"+rows.map(row=>row.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(";")).join("\n")],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`HR-Fahrtenkontrolle-${ym}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  refreshHrSummary();
+}
+
+function csv(){const rows=[["Datum","Start","Ende","Kunde","Zweck","Start km","Ende km","Fahrtart"]];records.slice().sort((a,b)=>((a.date||"")+"|"+(a.createdAt||"")).localeCompare((b.date||"")+"|"+(b.createdAt||""))).forEach(r=>rows.push([r.date,r.start||"",r.end||"",r.customer||"",r.purpose||"",r.startOdo,r.endOdo,typeLabel(r.type)]));const blob=new Blob(["\ufeff"+rows.map(row=>row.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(";")).join("\n")],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`fahrtenbuch-${today()}.csv`;a.click()}
+function backup(){const blob=new Blob([JSON.stringify({version:9,exportedAt:nowIso(),records,customers,audit},null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`fahrtenbuch-backup-${today()}.json`;a.click()}
+
+$("tripDate").value=today();$("mDate").value=today();
+window.addEventListener("pageshow",()=>{if(!active)$("tripDate").value=today();});
+$("useLastKm").onclick=()=>{const x=lastEndKm();x==null?alert("Noch kein letzter km-Stand."):($("startOdo").value=x)};$("mUseLastKm").onclick=()=>{const x=lastEndKm();x==null?alert("Noch kein letzter km-Stand."):($("mStartOdo").value=x)};
+$("customer").oninput=e=>applyCustomer(e.target.value,"customerAddress");$("mCustomer").oninput=e=>applyCustomer(e.target.value,"mCustomerAddress");$("eCustomer").oninput=e=>applyCustomer(e.target.value,"eCustomerAddress");
+$("startBtn").onclick=startTrip;$("finishBtn").onclick=finishTrip;$("saveReviewed").onclick=saveReviewed;$("cancelReviewed").onclick=()=>{if(confirm("Fahrt verwerfen?")){active=null;reviewDraft=null;localStorage.removeItem(ACTIVE_KEY);$("reviewCard").classList.add("hidden");render()}};
+$("tabTrips").onclick=()=>{$("tripsPane").classList.remove("hidden");$("manualPane").classList.add("hidden");$("tabTrips").className="on";$("tabManual").className="off"};$("tabManual").onclick=()=>{$("manualPane").classList.remove("hidden");$("tripsPane").classList.add("hidden");$("tabManual").className="on";$("tabTrips").className="off"};
+$("mStartHome").onclick=()=>$("mStart").value=HOME_ADDRESS;$("mEndHome").onclick=()=>$("mEnd").value=HOME_ADDRESS;$("mCalcRoute").onclick=calcManual;$("manualSave").onclick=manualSave;
+$("editSave").onclick=editSave;$("editClose").onclick=()=>$("editDialog").close();$("hrCsvBtn").onclick=exportHrCsv;$("hrMonth").onchange=refreshHrSummary;$("csvBtn").onclick=csv;$("backupBtn").onclick=backup;
+$("restoreFile").onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.records))throw 0;if(confirm("Aktuelle Daten durch Backup ersetzen?")){records=d.records;customers=d.customers||{};audit=d.audit||[];saveAll();renderCustomers();render()}}catch(_){alert("Backup ungültig.")}e.target.value=""};
+
+renderCustomers();fixedCoords();
+$("hrMonth").value=today().slice(0,7);
+if(!active){$("startOdo").value="";$("tripDate").value=today();if(!$("purpose").value)$("purpose").value="Kundenbesuch";if(!$("mPurpose").value)$("mPurpose").value="Kundenbesuch";}
+render();refreshHrSummary();
+if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});
+</script>
+</body></html>
